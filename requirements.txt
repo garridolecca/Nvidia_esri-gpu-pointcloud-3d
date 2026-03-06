@@ -1,0 +1,5 @@
+numpy
+pandas
+cupy-cuda12x
+scikit-learn
+laspy[laszip]
