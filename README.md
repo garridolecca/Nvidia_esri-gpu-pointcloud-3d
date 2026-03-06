@@ -4,7 +4,7 @@ GPU-accelerated LiDAR point cloud processing combining **NVIDIA CuPy** with **Ar
 
 ## Live Demo
 
-**[View Live App](https://garridolecca.github.io/gpu-pointcloud-3d/)**
+**[View Live App](https://garridolecca.github.io/Nvidia_esri-gpu-pointcloud-3d/)**
 
 ## GPU Analytics Pipeline
 
