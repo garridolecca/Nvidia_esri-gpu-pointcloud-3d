@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>GPU 3D Point Cloud Analysis</title>
+  <script type="module" src="https://js.arcgis.com/5.0/"></script>
+  <style>
+    :root{--bg:#0a0e17;--bg2:#111827;--bg3:#1a2332;--brd:#1e293b;--t1:#e5e7eb;--t2:#9ca3af;--t3:#6b7280;--ac:#00d4ff;--nv:#76b900}
+    *{margin:0;padding:0;box-sizing:border-box}html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--t1)}
+    #hdr{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:linear-gradient(135deg,#0f1729,#162033,#0f3460);border-bottom:1px solid var(--brd)}
+    #hdr h1{font-size:18px;font-weight:600}#hdr h1 span{color:var(--ac)}.sub{font-size:11px;color:var(--t3)}
+    .bdg{padding:3px 8px;border-radius:10px;font-size:9px;font-weight:700;text-transform:uppercase}.bdg-n{background:var(--nv);color:#000}.bdg-a{background:#0079c1;color:#fff}.bdg-3{background:#ff6600;color:#fff}
+    #app{display:flex;height:calc(100vh - 56px)}
+    #sb{width:300px;min-width:300px;background:var(--bg2);border-right:1px solid var(--brd);display:flex;flex-direction:column;overflow-y:auto}
+    .sl{padding:12px 18px 4px;font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1.5px;font-weight:700}
+    .lb{padding:10px 16px;cursor:pointer;border:none;background:none;text-align:left;color:var(--t2);font-size:12px;transition:all .15s;border-left:3px solid transparent;display:flex;align-items:center;gap:10px;width:100%}
+    .lb:hover{background:var(--bg3);color:var(--t1)}.lb.active{background:var(--bg3);color:var(--ac);border-left-color:var(--ac)}
+    .lb .l{font-weight:600}.lb .d{font-size:10px;color:var(--t3);margin-top:1px}.lb .g{font-size:8px;background:var(--nv);color:#000;padding:1px 5px;border-radius:6px;font-weight:700;margin-left:auto}
+    #sp{padding:12px 16px;border-top:1px solid var(--brd);margin-top:auto}#sp h3{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .sr{display:flex;justify-content:space-between;padding:3px 0;font-size:11px}.sr .v{color:var(--ac);font-weight:600}
+    #ma{flex:1;position:relative}arcgis-map{width:100%;height:100%}
+    #ip{position:absolute;top:12px;right:12px;background:rgba(17,24,39,.92);border:1px solid var(--brd);border-radius:10px;padding:16px;max-width:340px;backdrop-filter:blur(12px);z-index:10}
+    #ip h2{font-size:14px;color:#fff;margin-bottom:4px}#ip .mt{display:inline-block;font-size:9px;background:var(--nv);color:#000;padding:2px 7px;border-radius:8px;font-weight:700;margin-bottom:6px}
+    #ip p{font-size:11px;color:var(--t2);line-height:1.5}.lg{margin-top:8px;display:flex;flex-wrap:wrap;gap:3px 12px}
+    .li{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--t2)}.ls{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+    #pp{position:absolute;bottom:12px;left:12px;right:12px;background:rgba(17,24,39,.92);border:1px solid var(--brd);border-radius:10px;padding:14px;backdrop-filter:blur(12px);z-index:10;display:none}
+    #pp h3{font-size:12px;color:#fff;margin-bottom:8px}#pc{width:100%;height:120px}
+  </style>
+</head>
+<body>
+<div id="hdr"><div><h1><span>GPU</span> 3D Point Cloud Analysis</h1><div class="sub">500K LiDAR Points | Manhattan | CuPy + ArcGIS 5.0</div></div><div style="display:flex;gap:6px"><span class="bdg bdg-n">RTX A4000</span><span class="bdg bdg-3">3D LiDAR</span><span class="bdg bdg-a">ArcGIS 5.0</span></div></div>
+<div id="app">
+  <div id="sb">
+    <div class="sl">Point Cloud</div>
+    <button class="lb active" data-layer="points"><div><span class="l">Classified Points</span><span class="d">Ground/Building/Vegetation/Noise</span></div><span class="g">GPU</span></button>
+    <button class="lb" data-layer="buildings"><div><span class="l">Building Footprints</span><span class="d">Convex hull extraction</span></div><span class="g">GPU</span></button>
+    <div class="sl">Terrain</div>
+    <button class="lb" data-layer="dem"><div><span class="l">DEM Surface</span><span class="d">IDW elevation model</span></div><span class="g">GPU</span></button>
+    <button class="lb" data-layer="slope"><div><span class="l">Slope Analysis</span><span class="d">Gradient computation</span></div><span class="g">GPU</span></button>
+    <div class="sl">Vegetation</div>
+    <button class="lb" data-layer="trees"><div><span class="l">Tree Detection</span><span class="d">Local maxima canopy height</span></div><span class="g">GPU</span></button>
+    <button class="lb" data-layer="profile"><div><span class="l">Terrain Profile</span><span class="d">E-W cross section</span></div></button>
+    <div id="sp"><h3>Summary</h3><div id="sc"></div></div>
+  </div>
+  <div id="ma">
+    <arcgis-map basemap="dark-gray-vector" center="-74.006,40.7128" zoom="16"><arcgis-zoom position="top-left"></arcgis-zoom></arcgis-map>
+    <div id="ip"><h2 id="it">Classified Points</h2><span class="mt" id="im">GPU</span><p id="id"></p><div class="lg" id="il"></div></div>
+    <div id="pp"><h3>Terrain Cross-Section (E-W)</h3><canvas id="pc"></canvas></div>
+  </div>
+</div>
+<script type="module">
+const GeoJSONLayer=await $arcgis.import("@arcgis/core/layers/GeoJSONLayer.js");
+const D="data/",mapEl=document.querySelector("arcgis-map");await mapEl.viewOnReady();
+const meta={
+  points:{title:"Classified Points",method:"GPU CLASSIFICATION",desc:"GPU-accelerated ground classification via progressive morphological filtering. 500K points classified into Ground (brown), Building (blue), Vegetation (green), Noise (gray).",legend:[["#8B7355","Ground"],["#4488ff","Building"],["#44bb44","Vegetation"],["#888","Noise"]]},
+  buildings:{title:"Building Footprints",method:"DBSCAN + HULL",desc:"Building detection via height thresholding + DBSCAN clustering. Footprints extracted as convex hulls. Height color-coded.",legend:[["#4488ff","< 40m"],["#66aaff","40-60m"],["#88ccff","60-80m"],["#aaddff","> 80m"]]},
+  dem:{title:"DEM Surface",method:"GPU IDW",desc:"Digital Elevation Model via GPU IDW interpolation of ground points. CuPy processes batched distance matrices.",legend:[["#006644","Low"],["#228855","Medium"],["#44aa66","High"]]},
+  slope:{title:"Slope Analysis",method:"GPU GRADIENT",desc:"Slope from DEM using CuPy gradient operations.",legend:[["#44bb44","Flat"],["#ffaa00","Gentle"],["#ff4400","Steep"]]},
+  trees:{title:"Tree Detection",method:"GPU LOCAL MAX",desc:"Trees detected as local maxima in Canopy Height Model (DSM-DEM) using GPU 3x3 neighborhood comparison.",legend:[["#22aa22","Short"],["#44cc44","Medium"],["#66ee66","Tall"]]},
+  profile:{title:"Terrain Profile",method:"CROSS SECTION",desc:"E-W cross section through study area center showing ground and surface elevation.",legend:[["#8B7355","Ground"],["#4488ff","Surface"]]}
+};
+const layers={};
+layers.points=new GeoJSONLayer({url:D+"classified_points.geojson",visible:true,renderer:{type:"unique-value",field:"class",uniqueValueInfos:[
+  {value:2,symbol:{type:"simple-marker",color:"#8B7355",size:4,outline:null}},{value:6,symbol:{type:"simple-marker",color:"#4488ff",size:5,outline:null}},
+  {value:3,symbol:{type:"simple-marker",color:"#44bb44",size:4,outline:null}},{value:7,symbol:{type:"simple-marker",color:"#888",size:3,outline:null}}]},
+  popupTemplate:{title:"{class_name}",content:"<b>Height:</b> {z}m"}});
+layers.buildings=new GeoJSONLayer({url:D+"building_footprints.geojson",visible:false,renderer:{type:"class-breaks",field:"height_m",classBreakInfos:[
+  {minValue:0,maxValue:40,symbol:{type:"simple-fill",color:[68,136,255,160],outline:{color:"#88bbff",width:1}}},
+  {minValue:40,maxValue:60,symbol:{type:"simple-fill",color:[102,170,255,180],outline:{color:"#99ccff",width:1}}},
+  {minValue:60,maxValue:80,symbol:{type:"simple-fill",color:[136,204,255,200],outline:{color:"#aaddff",width:1}}},
+  {minValue:80,maxValue:200,symbol:{type:"simple-fill",color:[170,221,255,220],outline:{color:"#bbddff",width:1.5}}}]},
+  popupTemplate:{title:"Building {id}",content:"<b>Height:</b> {height_m}m<br><b>Area:</b> {area_m2} m2"}});
+layers.dem=new GeoJSONLayer({url:D+"dem_surface.geojson",visible:false,renderer:{type:"class-breaks",field:"elevation_m",classBreakInfos:[
+  {minValue:0,maxValue:1.8,symbol:{type:"simple-marker",color:[0,102,68,180],size:6,outline:null}},
+  {minValue:1.8,maxValue:2.2,symbol:{type:"simple-marker",color:[34,136,85,180],size:6,outline:null}},
+  {minValue:2.2,maxValue:5,symbol:{type:"simple-marker",color:[68,170,102,180],size:6,outline:null}}]},
+  popupTemplate:{title:"DEM",content:"<b>Elev:</b> {elevation_m}m"}});
+layers.slope=new GeoJSONLayer({url:D+"slope_map.geojson",visible:false,renderer:{type:"class-breaks",field:"slope_deg",classBreakInfos:[
+  {minValue:0,maxValue:0.5,symbol:{type:"simple-marker",color:[68,187,68,150],size:5,outline:null}},
+  {minValue:0.5,maxValue:2,symbol:{type:"simple-marker",color:[255,170,0,180],size:6,outline:null}},
+  {minValue:2,maxValue:90,symbol:{type:"simple-marker",color:[255,68,0,200],size:7,outline:null}}]},
+  popupTemplate:{title:"Slope",content:"<b>Slope:</b> {slope_deg} deg"}});
+layers.trees=new GeoJSONLayer({url:D+"tree_locations.geojson",visible:false,renderer:{type:"class-breaks",field:"canopy_height_m",classBreakInfos:[
+  {minValue:3,maxValue:8,symbol:{type:"simple-marker",color:"#22aa22",size:8,outline:{color:"#115511",width:1}}},
+  {minValue:8,maxValue:12,symbol:{type:"simple-marker",color:"#44cc44",size:10,outline:{color:"#226622",width:1}}},
+  {minValue:12,maxValue:50,symbol:{type:"simple-marker",color:"#66ee66",size:13,outline:{color:"#338833",width:1.5}}}]},
+  popupTemplate:{title:"Tree",content:"<b>Canopy:</b> {canopy_height_m}m"}});
+layers.profile=null;
+
+Object.values(layers).forEach(l=>{if(l)mapEl.map.add(l)});
+const btns=document.querySelectorAll(".lb");
+btns.forEach(b=>b.addEventListener("click",()=>{const n=b.dataset.layer;btns.forEach(x=>x.classList.remove("active"));b.classList.add("active");
+  Object.entries(layers).forEach(([k,l])=>{if(l)l.visible=k===n});const m=meta[n];
+  document.getElementById("it").textContent=m.title;document.getElementById("im").textContent=m.method;
+  document.getElementById("id").textContent=m.desc;
+  document.getElementById("il").innerHTML=m.legend.map(([c,l])=>`<div class="li"><div class="ls" style="background:${c}"></div>${l}</div>`).join("");
+  document.getElementById("pp").style.display=n==="profile"?"block":"none";
+  if(n==="profile")drawProfile();}));
+btns[0].click();
+
+async function drawProfile(){
+  const data=await fetch(D+"terrain_profile.json").then(r=>r.json());
+  const canvas=document.getElementById("pc");const ctx=canvas.getContext("2d");
+  canvas.width=canvas.offsetWidth*2;canvas.height=240;ctx.scale(2,2);
+  const w=canvas.offsetWidth,h=120,pts=data.points;
+  const maxE=Math.max(...pts.map(p=>p.ground_m||0));
+  ctx.fillStyle="#111827";ctx.fillRect(0,0,w,h);
+  ctx.beginPath();ctx.moveTo(0,h);
+  pts.forEach((p,i)=>{ctx.lineTo(i/(pts.length-1)*w,h-((p.ground_m||0)/Math.max(maxE,1))*(h-20)-10)});
+  ctx.lineTo(w,h);ctx.closePath();ctx.fillStyle="rgba(139,115,85,0.5)";ctx.fill();
+  ctx.strokeStyle="#8B7355";ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle="#9ca3af";ctx.font="10px sans-serif";ctx.fillText("W",4,h-4);ctx.fillText("E",w-12,h-4);
+}
+const s=await fetch(D+"summary.json").then(r=>r.json());
+document.getElementById("sc").innerHTML=[["Points",s.total_points?.toLocaleString()],["Buildings",s.buildings],["Trees",s.trees],["Max Height",s.max_height_m+"m"],["GPU",s.gpu?"Yes":"No"]].map(([k,v])=>`<div class="sr"><span>${k}</span><span class="v">${v}</span></div>`).join("");
+</script>
+</body></html>
